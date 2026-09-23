@@ -270,11 +270,14 @@ async function renderGraphCanvas(txnId) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
-    // Exact sizing
-    canvas.width = canvas.parentElement.clientWidth || 900;
-    canvas.height = 300;
+    // Exact sizing to parent container
+    const parent = canvas.parentElement;
+    const width = parent ? (parent.clientWidth || 800) : 800;
+    const height = 300;
+    canvas.width = width;
+    canvas.height = height;
     
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, width, height);
 
     try {
         const res = await fetch(`${API_BASE}/api/graph/${txnId}`);
@@ -282,37 +285,53 @@ async function renderGraphCanvas(txnId) {
         const nodes = data.nodes || [];
         const links = data.links || [];
 
-        if (nodes.length === 0) return;
+        if (nodes.length === 0) {
+            ctx.fillStyle = '#64748b';
+            ctx.font = '13px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No connected graph entities found for this transaction', width / 2, height / 2);
+            return;
+        }
 
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-
+        const cx = width / 2;
+        const cy = height / 2;
         const nodePos = {};
-        nodes.forEach((n, idx) => {
-            if (n.type === 'Transaction') {
-                nodePos[n.id] = { x: cx, y: cy, color: '#ffe600', label: n.label, type: n.type };
-            } else {
-                const nonTxnCount = nodes.length - 1;
-                const angle = (idx / nonTxnCount) * Math.PI * 2;
-                const radius = n.label.includes('Shared') || n.color === '#dc2626' ? 120 : 80;
-                
-                let themeColor = '#10b981'; // Card default
-                if (n.type === 'Customer') themeColor = '#38bdf8';
-                else if (n.type === 'DeviceProfile') themeColor = '#f59e0b';
-                else if (n.type === 'BillingRegion') themeColor = '#a855f7';
-                else if (n.label.includes('Shared') || n.color === '#dc2626') themeColor = '#ff007f';
 
-                nodePos[n.id] = {
-                    x: cx + Math.cos(angle) * radius,
-                    y: cy + Math.sin(angle) * radius,
-                    color: themeColor,
-                    label: n.label,
-                    type: n.type
-                };
-            }
+        // 1. Position Central Transaction Node
+        const txnNode = nodes.find(n => n.type === 'Transaction') || nodes[0];
+        nodePos[txnNode.id] = {
+            x: cx,
+            y: cy,
+            color: txnNode.color || '#ffe600',
+            label: txnNode.label,
+            type: 'Transaction'
+        };
+
+        // 2. Position Surrounding Neighbors in Radial Orbits
+        const otherNodes = nodes.filter(n => n.id !== txnNode.id);
+        const count = otherNodes.length;
+
+        otherNodes.forEach((n, idx) => {
+            const angle = (idx / Math.max(count, 1)) * Math.PI * 2;
+            const isShared = n.label.includes('Shared') || n.color === '#ff007f';
+            const radius = isShared ? Math.min(width * 0.38, 125) : Math.min(width * 0.25, 80);
+
+            let themeColor = n.color || '#10b981';
+            if (n.type === 'Customer') themeColor = '#38bdf8';
+            else if (n.type === 'DeviceProfile') themeColor = '#f59e0b';
+            else if (n.type === 'BillingRegion') themeColor = n.color || '#a855f7';
+            else if (isShared) themeColor = '#ff007f';
+
+            nodePos[n.id] = {
+                x: cx + Math.cos(angle) * radius,
+                y: cy + Math.sin(angle) * radius,
+                color: themeColor,
+                label: n.label,
+                type: n.type
+            };
         });
 
-        // Draw Links
+        // 3. Draw Links
         links.forEach(l => {
             const p1 = nodePos[l.source];
             const p2 = nodePos[l.target];
@@ -320,31 +339,48 @@ async function renderGraphCanvas(txnId) {
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
                 ctx.lineTo(p2.x, p2.y);
-                ctx.strokeStyle = (p2.color === '#ff007f' || p1.color === '#ff007f') ? '#ff007f' : 'rgba(255, 230, 0, 0.35)';
-                ctx.lineWidth = p2.color === '#ff007f' ? 2 : 1.2;
+                const isHighlight = p1.color === '#ff007f' || p2.color === '#ff007f';
+                ctx.strokeStyle = isHighlight ? 'rgba(255, 0, 127, 0.7)' : 'rgba(255, 230, 0, 0.4)';
+                ctx.lineWidth = isHighlight ? 2 : 1.2;
                 ctx.stroke();
             }
         });
 
-        // Draw Nodes
+        // 4. Draw Nodes
         Object.values(nodePos).forEach(p => {
-            // Node Glow
+            const isTxn = p.type === 'Transaction';
+            const radius = isTxn ? 18 : 12;
+
+            // Outer soft glow
             ctx.beginPath();
-            ctx.arc(p.x, p.y, p.type === 'Transaction' ? 18 : 13, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, radius + 4, 0, Math.PI * 2);
+            ctx.fillStyle = isTxn ? 'rgba(255, 230, 0, 0.25)' : 'rgba(16, 185, 129, 0.15)';
+            ctx.fill();
+
+            // Core circle
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
             ctx.fillStyle = p.color;
             ctx.fill();
 
-            // Border
+            // Dark border
             ctx.lineWidth = 2;
-            ctx.strokeStyle = '#041d10';
+            ctx.strokeStyle = '#021208';
             ctx.stroke();
 
-            // Node Label
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '600 11px JetBrains Mono';
+            // Label text pill
+            const firstLine = (p.label || '').split('\n')[0].replace('DEV_', 'DEV:');
+            ctx.font = isTxn ? '700 11px monospace' : '600 10px monospace';
             ctx.textAlign = 'center';
-            const displayLabel = p.label.split('\n')[0].replace('DEV_', 'DEV:');
-            ctx.fillText(displayLabel, p.x, p.y + (p.y >= cy ? 22 : -18));
+            const textY = p.y >= cy ? p.y + radius + 14 : p.y - radius - 6;
+
+            // Text background shadow for contrast
+            ctx.fillStyle = 'rgba(2, 18, 8, 0.85)';
+            const textWidth = ctx.measureText(firstLine).width;
+            ctx.fillRect(p.x - textWidth / 2 - 4, textY - 10, textWidth + 8, 14);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(firstLine, p.x, textY);
         });
 
     } catch (err) {
