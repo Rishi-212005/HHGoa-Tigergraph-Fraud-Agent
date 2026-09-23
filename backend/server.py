@@ -32,6 +32,7 @@ class FraudAgentRequestHandler(BaseHTTPRequestHandler):
     case_manager = CaseManager()
     evidence_simulator = EvidenceSimulator()
     query_engine = GraphQueryEngine()
+    cases_dir = os.path.abspath(os.path.join(ROOT_DIR, 'cases'))
     answers_dir = os.path.abspath(os.path.join(ROOT_DIR, 'answers'))
     frontend_dir = os.path.abspath(os.path.join(ROOT_DIR, 'frontend'))
 
