@@ -43,10 +43,19 @@ function setupEventListeners() {
     });
 
     // On-Demand Investigation
-    document.getElementById('btnInvestigateTxn').addEventListener('click', () => {
-        const txnId = document.getElementById('onDemandTxnInput').value.trim();
-        if (txnId) runOnDemandInvestigation(txnId);
-    });
+    const txnInput = document.getElementById('onDemandTxnInput');
+    const triggerInvestigate = () => {
+        const raw = txnInput.value.trim();
+        const clean = raw.replace(/^#+/, '').trim();
+        if (clean) runOnDemandInvestigation(clean);
+    };
+
+    document.getElementById('btnInvestigateTxn').addEventListener('click', triggerInvestigate);
+    if (txnInput) {
+        txnInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') triggerInvestigate();
+        });
+    }
 
     // Copy SAR Button
     document.getElementById('btnCopySar').addEventListener('click', () => {
@@ -414,7 +423,17 @@ async function simulateEvidence(actionType, outcomeCode, notes) {
     }
 }
 
-async function runOnDemandInvestigation(txnId) {
+async function runOnDemandInvestigation(rawTxnId) {
+    const txnId = String(rawTxnId).replace(/[^0-9]/g, '').trim();
+    if (!txnId) return;
+
+    const btn = document.getElementById('btnInvestigateTxn');
+    const origText = btn ? btn.innerHTML : '⚡ Investigate';
+    if (btn) {
+        btn.innerHTML = '⏳ Investigating...';
+        btn.disabled = true;
+    }
+
     try {
         const res = await fetch(`${API_BASE}/api/investigate`, {
             method: 'POST',
@@ -422,10 +441,27 @@ async function runOnDemandInvestigation(txnId) {
             body: JSON.stringify({ transaction_id: txnId })
         });
         const dossier = await res.json();
+        if (dossier.error) {
+            alert(`Investigation notice: ${dossier.error}`);
+            return;
+        }
         currentCase = dossier;
         renderCaseDetails(currentCase);
         renderGraphCanvas(txnId);
+
+        // Highlight matching case item in list if present
+        const matchingEl = [...document.querySelectorAll('.case-item')].find(el => el.innerText.includes(txnId));
+        if (matchingEl) {
+            document.querySelectorAll('.case-item').forEach(el => el.classList.remove('active'));
+            matchingEl.classList.add('active');
+            matchingEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     } catch (err) {
         console.error('On demand investigation failed:', err);
+    } finally {
+        if (btn) {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+        }
     }
 }
