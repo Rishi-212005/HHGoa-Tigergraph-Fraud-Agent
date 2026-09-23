@@ -296,9 +296,10 @@ class FraudAgentRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, updated)
 
 def run_server(port: int = 8000):
+    port = int(os.environ.get("PORT", port))
     server_address = ('', port)
     httpd = HTTPServer(server_address, FraudAgentRequestHandler)
-    logger.info(f"TigerGraph Fraud Agent Backend running at http://localhost:{port}")
+    logger.info(f"TigerGraph Fraud Agent Backend running on port {port}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
